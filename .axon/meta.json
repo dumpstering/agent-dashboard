@@ -1,0 +1,16 @@
+{
+  "version": "0.2.3",
+  "name": "dashboard",
+  "path": "/Users/open/.openclaw/workspace/projects/dashboard",
+  "stats": {
+    "files": 4,
+    "symbols": 87,
+    "relationships": 269,
+    "clusters": 9,
+    "flows": 3,
+    "dead_code": 2,
+    "coupled_pairs": 0,
+    "embeddings": 91
+  },
+  "last_indexed_at": "2026-02-28T06:28:52.623538+00:00"
+}
