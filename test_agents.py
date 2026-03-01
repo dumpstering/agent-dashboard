@@ -96,6 +96,7 @@ async def run() -> None:
         for expected in TEST_AGENTS:
             found = by_id.get(expected["id"])
             assert_true(found is not None, f"{expected['id']} exists in agent list")
+            assert found is not None  # for mypy narrowing
             assert_true(found["project"] == expected["project"], f"{expected['id']} has expected project")
             assert_true(found["task"] == expected["task"], f"{expected['id']} has expected task")
             assert_true(found["status"] == expected["status"], f"{expected['id']} has expected status")

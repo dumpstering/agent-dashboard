@@ -1,0 +1,19 @@
+[agents]
+max_threads = 6
+max_depth = 1
+
+[agents.explorer]
+description = "Read-only codebase explorer for gathering evidence and mapping code paths."
+config_file = "agents/explorer.toml"
+
+[agents.auditor]
+description = "Security, architecture, and quality auditor. Finds issues, scores dimensions."
+config_file = "agents/auditor.toml"
+
+[agents.reviewer]
+description = "QA reviewer focused on correctness, test coverage, and regressions."
+config_file = "agents/reviewer.toml"
+
+[agents.worker]
+description = "Implementation-focused agent for targeted fixes after issues are understood."
+config_file = "agents/worker.toml"

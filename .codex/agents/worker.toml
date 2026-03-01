@@ -1,0 +1,8 @@
+model = "gpt-5.3-codex"
+model_reasoning_effort = "high"
+developer_instructions = """
+Own the fix. Make the smallest defensible change.
+Keep unrelated files untouched.
+Commit after each logical fix with descriptive messages.
+Run tests after changes.
+"""

@@ -25,7 +25,9 @@ This model covers the dashboard service in this repository:
 
 1. Unauthorized API mutation
 - Risk: unauthenticated POSTs modify agent state.
-- Existing controls: optional API key middleware.
+- Existing controls: fail-closed auth policy on mutating `/api/*` routes.
+  In non-dev mode (`DASHBOARD_DEV_MODE != 1`), mutating requests are rejected
+  unless a valid `DASHBOARD_API_KEY` is provided.
 
 2. Cross-site WebSocket abuse
 - Risk: attacker origin opens dashboard WS and sends messages.
@@ -41,7 +43,14 @@ This model covers the dashboard service in this repository:
 
 5. Resource exhaustion / DoS
 - Risk: excessive WS/API traffic or large payloads degrades service.
-- Existing controls: WS rate limiting and message-size cap.
+- Existing controls: WS rate limiting and message-size cap, JSON body-size cap
+  (`MAX_JSON_BODY_BYTES`), and per-field max lengths for key JSON inputs
+  (`id`, `project`, `task`, `message`).
+
+6. Chat history data exposure
+- Risk: unauthorized users retrieve operator/user message history.
+- Existing controls: `/api/chat/history` is auth-gated under the same API auth
+  policy as mutating routes.
 
 6. Dependency/runtime drift
 - Risk: deploy uses unexpected Python/aiohttp version and behavior changes.
@@ -55,7 +64,8 @@ This model covers the dashboard service in this repository:
 
 ## Required Minimum Controls
 
-- Set `DASHBOARD_API_KEY` in non-dev environments.
+- Set strong `DASHBOARD_API_KEY` in non-dev environments.
+- Keep `DASHBOARD_DEV_MODE=0` in production.
 - Set explicit `DASH_ALLOWED_ORIGINS` to trusted dashboard origins.
 - Use `wss://` for non-local gateway URLs.
 - Restrict dashboard port exposure to expected networks.
@@ -64,7 +74,6 @@ This model covers the dashboard service in this repository:
 
 ## Residual Risk
 
-- In-memory chat history is not encrypted and is process-accessible.
+- In-memory chat history is still process-accessible (auth-gated at API layer).
 - Local machine compromise can bypass application-layer controls.
 - Availability can still be impacted by upstream gateway outages.
-

@@ -8,10 +8,18 @@ Dark-tech dashboard for monitoring agent activity with a JSON-backed state store
 - `pip` (bundled with most Python installs)
 - OS support for Python virtual environments (`venv`)
 
-Required Python packages (from `requirements.txt`):
+Required runtime packages (from `requirements.txt`):
 
 - `aiohttp==3.9.3`
 - `psutil==5.9.8`
+
+Required development packages (from `requirements-dev.txt`):
+
+- `pytest`
+- `pytest-aiohttp`
+- `ruff`
+- `mypy`
+- `bandit`
 
 ## Setup
 
@@ -22,10 +30,13 @@ python3 -m venv venv
 # 2) Activate
 source venv/bin/activate
 
-# 3) Install dependencies
+# 3) Install runtime dependencies
 pip install -r requirements.txt
 
-# 4) Run server
+# 4) Install development dependencies
+pip install -r requirements-dev.txt
+
+# 5) Run server
 python server.py
 ```
 
@@ -35,6 +46,21 @@ Shortcut:
 
 ```bash
 ./start.sh
+```
+
+## Standard Dev Workflow
+
+Run the full local CI chain before pushing changes:
+
+```bash
+make ci
+```
+
+Equivalent manual commands:
+
+```bash
+pip install -r requirements-dev.txt
+make ci
 ```
 
 ## Environment Variables

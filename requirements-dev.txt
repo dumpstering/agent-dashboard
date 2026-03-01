@@ -1,0 +1,5 @@
+pytest
+pytest-aiohttp
+ruff
+mypy
+bandit

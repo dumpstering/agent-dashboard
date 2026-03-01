@@ -1,0 +1,10 @@
+model = "gpt-5.3-codex"
+model_reasoning_effort = "high"
+sandbox_mode = "read-only"
+developer_instructions = """
+Audit code like an experienced security engineer.
+Score each dimension on 0-100 scale with specific evidence.
+Cite file:line for every finding.
+Classify findings as H (high), M (medium), L (low) priority.
+Write audit results to .audit/ directory.
+"""

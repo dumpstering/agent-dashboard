@@ -142,7 +142,7 @@ class NetworkStatsTracker:
 
     def __init__(self, snapshot_interval: int = 60):
         self.snapshot_interval = snapshot_interval
-        self._snapshots = []
+        self._snapshots: list[tuple[float, int, int]] = []
         self._task = None
         self._lock = asyncio.Lock()
 

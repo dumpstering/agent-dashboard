@@ -14,7 +14,7 @@ from state import AgentState
 
 
 class BaseApiTestCase(AioHTTPTestCase):
-    DASH_API_KEY = None
+    DASH_API_KEY: str | None = None
 
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
@@ -22,11 +22,13 @@ class BaseApiTestCase(AioHTTPTestCase):
         self._original_gateway_url = os.environ.get("OPENCLAW_GATEWAY_URL")
         self._original_gateway_token = os.environ.get("OPENCLAW_GATEWAY_TOKEN")
         self._original_allowed_origins = os.environ.get("DASH_ALLOWED_ORIGINS")
+        self._original_dev_mode = os.environ.get("DASHBOARD_DEV_MODE")
 
         if self.DASH_API_KEY is None:
             os.environ.pop("DASHBOARD_API_KEY", None)
         else:
             os.environ["DASHBOARD_API_KEY"] = self.DASH_API_KEY
+        os.environ["DASHBOARD_DEV_MODE"] = "1"
 
         server.state = AgentState(db_path=str(Path(self.tmp_dir.name) / "agents.json"))
         server.sse_clients = set()
@@ -50,6 +52,10 @@ class BaseApiTestCase(AioHTTPTestCase):
             os.environ.pop("DASH_ALLOWED_ORIGINS", None)
         else:
             os.environ["DASH_ALLOWED_ORIGINS"] = self._original_allowed_origins
+        if self._original_dev_mode is None:
+            os.environ.pop("DASHBOARD_DEV_MODE", None)
+        else:
+            os.environ["DASHBOARD_DEV_MODE"] = self._original_dev_mode
         self.tmp_dir.cleanup()
         super().tearDown()
 
@@ -197,6 +203,23 @@ class TestApiErrorContracts(BaseApiTestCase):
         assert remove_resp.status == 404
         assert await remove_resp.json() == {"success": False, "error": "Agent not found"}
 
+    async def test_request_body_limit_returns_413(self):
+        oversize = "x" * (server.MAX_JSON_BODY_BYTES + 1)
+        resp = await self.client.post("/api/chat", json={"message": oversize})
+        assert resp.status == 413
+        assert await resp.json() == {"success": False, "error": "Request body too large"}
+
+    async def test_field_length_validation_returns_400(self):
+        too_long_id = "a" * 1025
+        resp = await self.client.post(
+            "/api/agents",
+            json={"id": too_long_id, "project": "Dashboard", "task": "Hardening", "status": "queued"},
+        )
+        assert resp.status == 400
+        body = await resp.json()
+        assert body["success"] is False
+        assert "maximum length" in body["error"].lower()
+
 
 class TestApiAuth(BaseApiTestCase):
     DASH_API_KEY = "super-secret"
@@ -226,6 +249,53 @@ class TestApiAuth(BaseApiTestCase):
         body = await ok_resp.json()
         assert body["success"] is True
 
+    async def test_chat_history_requires_key_and_accepts_valid_key(self):
+        no_key = await self.client.get("/api/chat/history")
+        assert no_key.status == 401
+        assert await no_key.json() == {"success": False, "error": "Unauthorized"}
+
+        ok = await self.client.get("/api/chat/history", headers={"X-API-Key": "super-secret"})
+        assert ok.status == 200
+        body = await ok.json()
+        assert "messages" in body
+
+
+class TestApiFailClosedAuth(BaseApiTestCase):
+    DASH_API_KEY = None
+
+    def setUp(self):
+        super().setUp()
+        os.environ.pop("DASHBOARD_API_KEY", None)
+        os.environ["DASHBOARD_DEV_MODE"] = "0"
+
+    async def test_mutating_endpoints_require_auth_when_key_unset(self):
+        add_resp = await self.client.post(
+            "/api/agents",
+            json={"id": "agent-fail-closed", "project": "Dashboard", "task": "Auth hardening"},
+        )
+        assert add_resp.status == 403
+        assert await add_resp.json() == {"success": False, "error": "Forbidden"}
+
+        status_resp = await self.client.post(
+            "/api/agents/status",
+            json={"id": "agent-fail-closed", "status": "working"},
+        )
+        assert status_resp.status == 403
+        assert await status_resp.json() == {"success": False, "error": "Forbidden"}
+
+        remove_resp = await self.client.post("/api/agents/remove", json={"id": "agent-fail-closed"})
+        assert remove_resp.status == 403
+        assert await remove_resp.json() == {"success": False, "error": "Forbidden"}
+
+        chat_resp = await self.client.post("/api/chat", json={"message": "unauthorized"})
+        assert chat_resp.status == 403
+        assert await chat_resp.json() == {"success": False, "error": "Forbidden"}
+
+    async def test_chat_history_requires_auth_when_key_unset(self):
+        history_resp = await self.client.get("/api/chat/history")
+        assert history_resp.status == 403
+        assert await history_resp.json() == {"success": False, "error": "Forbidden"}
+
 
 class TestChatWebSocket(BaseApiTestCase):
     DASH_API_KEY = "ws-secret"
@@ -233,6 +303,7 @@ class TestChatWebSocket(BaseApiTestCase):
 
     def setUp(self):
         super().setUp()
+        os.environ["DASHBOARD_DEV_MODE"] = "0"
         os.environ["DASH_ALLOWED_ORIGINS"] = self.WS_ORIGIN
 
     async def _start_gateway(self, send_ok=True):
@@ -393,5 +464,16 @@ class TestChatWebSocket(BaseApiTestCase):
             assert error == {"type": "error", "text": "Message too large"}
             closed = await ws.receive(timeout=2)
             assert closed.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED)
+        finally:
+            await self._stop_gateway()
+
+    async def test_ws_rejects_when_origin_allowlist_unset(self):
+        await self._start_gateway(send_ok=True)
+        os.environ.pop("DASH_ALLOWED_ORIGINS", None)
+        os.environ["DASHBOARD_DEV_MODE"] = "0"
+        try:
+            with self.assertRaises(aiohttp.WSServerHandshakeError) as ctx:
+                await self.client.ws_connect("/ws/chat?key=ws-secret", headers={"Origin": self.WS_ORIGIN})
+            assert ctx.exception.status == 403
         finally:
             await self._stop_gateway()
