@@ -12,7 +12,9 @@ from middleware import (
     MAX_JSON_BODY_BYTES,
     api_error_middleware,
     auth_middleware,
+    csp_middleware,
     parse_json,
+    rate_limit_middleware,
 )
 from routes.agents import register_routes as register_agent_routes
 from routes.chat import register_routes as register_chat_routes
@@ -119,7 +121,7 @@ def create_app():
     global _broadcast_event_impl, _send_sse_update_impl
 
     app = web.Application(
-        middlewares=[api_error_middleware, auth_middleware],
+        middlewares=[rate_limit_middleware, csp_middleware, api_error_middleware, auth_middleware],
         client_max_size=MAX_JSON_BODY_BYTES,
     )
     app[DASH_API_KEY_KEY] = os.getenv("DASHBOARD_API_KEY", "")

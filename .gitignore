@@ -1,6 +1,5 @@
 # Python
 venv/
-.venv/
 __pycache__/
 *.pyc
 *.pyo
@@ -20,4 +19,3 @@ agents.json
 # OS
 .DS_Store
 Thumbs.db
-.axon/

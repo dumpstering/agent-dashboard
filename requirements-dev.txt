@@ -1,5 +1,8 @@
 pytest
 pytest-aiohttp
+pytest-cov
 ruff
 mypy
 bandit
+types-psutil
+pre-commit

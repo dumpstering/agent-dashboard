@@ -298,6 +298,47 @@ class TestApiFailClosedAuth(BaseApiTestCase):
         assert await history_resp.json() == {"success": False, "error": "Forbidden"}
 
 
+class TestRateLimiting(BaseApiTestCase):
+    async def test_rate_limit_enforced_at_100_requests_per_minute(self):
+        """Verify 100 requests per minute rate limit per IP."""
+        import middleware
+
+        # Clear any existing rate limit state
+        middleware.rate_limit_store.clear()
+
+        # Make 100 requests - all should succeed
+        for i in range(100):
+            resp = await self.client.get("/api/agents")
+            assert resp.status == 200, f"Request {i+1} should succeed"
+
+        # 101st request should be rate limited
+        resp = await self.client.get("/api/agents")
+        assert resp.status == 429
+        body = await resp.json()
+        assert body["success"] is False
+        assert body["error"] == "Rate limit exceeded"
+
+    async def test_rate_limit_uses_sliding_window(self):
+        """Verify rate limiting uses a sliding window (timestamps expire after 60s)."""
+        import middleware
+        import time
+
+        # Clear rate limit state
+        middleware.rate_limit_store.clear()
+
+        # Inject old timestamps (61 seconds ago) to simulate expired requests
+        client_ip = "127.0.0.1"
+        old_time = time.time() - 61  # 61 seconds ago (outside the 60s window)
+        middleware.rate_limit_store[client_ip] = [old_time] * 100
+
+        # New request should succeed because old timestamps are expired
+        resp = await self.client.get("/api/agents")
+        assert resp.status == 200
+
+        # Verify old timestamps were cleaned up
+        assert len(middleware.rate_limit_store[client_ip]) == 1  # Only the new request
+
+
 class TestChatWebSocket(BaseApiTestCase):
     DASH_API_KEY: str | None = "ws-secret"
     WS_ORIGIN = "https://dash.test"
@@ -478,3 +519,14 @@ class TestChatWebSocket(BaseApiTestCase):
             assert ctx.exception.status == 403
         finally:
             await self._stop_gateway()
+
+
+class TestCSPHeaders(BaseApiTestCase):
+    """Test Content-Security-Policy headers."""
+
+    async def test_csp_header_present_on_responses(self):
+        resp = await self.client.get("/api/system")
+        csp = resp.headers.get("Content-Security-Policy")
+        assert csp is not None, "CSP header missing"
+        assert "default-src" in csp
+        assert "'self'" in csp

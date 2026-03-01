@@ -1,5 +1,6 @@
 """Shared middleware and API helpers."""
 import os
+import time
 from urllib.parse import urlparse
 
 from aiohttp import web
@@ -127,6 +128,23 @@ async def auth_middleware(request, handler):
     return await handler(request)
 
 
+CSP_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "connect-src 'self' wss: ws:"
+)
+
+
+@web.middleware
+async def csp_middleware(request, handler):
+    """Add Content-Security-Policy header to all responses."""
+    resp = await handler(request)
+    resp.headers["Content-Security-Policy"] = CSP_POLICY
+    return resp
+
+
 @web.middleware
 async def api_error_middleware(request, handler):
     """Normalize API errors so clients always receive JSON."""
@@ -143,3 +161,49 @@ async def api_error_middleware(request, handler):
         if not request.path.startswith("/api/"):
             raise
         return error_response("Internal server error", status=500)
+
+
+# Rate limiting: 100 requests per minute per IP
+RATE_LIMIT_REQUESTS = 100
+RATE_LIMIT_WINDOW = 60  # seconds
+rate_limit_store: dict[str, list[float]] = {}
+
+
+def get_client_ip(request: web.Request) -> str:
+    """Extract client IP from request."""
+    # Check X-Forwarded-For header first (for proxies)
+    forwarded = request.headers.get("X-Forwarded-For", "").strip()
+    if forwarded:
+        # Take the first IP in the chain
+        return forwarded.split(",")[0].strip()
+
+    # Fallback to direct connection IP
+    peername = request.transport.get_extra_info("peername") if request.transport else None
+    if peername:
+        return peername[0]
+    return "unknown"
+
+
+@web.middleware
+async def rate_limit_middleware(request, handler):
+    """Rate limit requests by IP address (100 requests per minute)."""
+    client_ip = get_client_ip(request)
+    current_time = time.time()
+
+    # Initialize or get existing request timestamps for this IP
+    if client_ip not in rate_limit_store:
+        rate_limit_store[client_ip] = []
+
+    timestamps = rate_limit_store[client_ip]
+
+    # Remove timestamps older than the window
+    timestamps[:] = [ts for ts in timestamps if current_time - ts < RATE_LIMIT_WINDOW]
+
+    # Check if rate limit exceeded
+    if len(timestamps) >= RATE_LIMIT_REQUESTS:
+        return error_response("Rate limit exceeded", status=429)
+
+    # Add current request timestamp
+    timestamps.append(current_time)
+
+    return await handler(request)

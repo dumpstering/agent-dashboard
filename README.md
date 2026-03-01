@@ -95,6 +95,8 @@ Browser auth for chat when `DASHBOARD_API_KEY` is enabled:
 
 ## API Contract
 
+Full OpenAPI 3.0 spec: [`docs/openapi.yaml`](docs/openapi.yaml)
+
 Base URL: `http://localhost:8223`
 
 Content type for JSON request bodies:
