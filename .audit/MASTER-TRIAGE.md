@@ -1,79 +1,60 @@
-# Master Triage
+# MASTER TRIAGE (H/M/L)
 
-Project: Agent Orchestration Dashboard (WebSocket chat integration)
+Date: 2026-03-01
+Scope: full codebase audit
 
-## CRITICAL
+## High Priority (Fix First)
 
-### C1 - Hardcoded gateway token in repository startup path - FIXED
-- **Location:** `start.sh:34`
-- **Impact:** Credential exposure and potential unauthorized gateway access.
-- **Fix:** Remove fallback secret; require explicit secure env provisioning.
-- **Verification:** `OPENCLAW_GATEWAY_TOKEN` now uses strict required env expansion with no fallback secret.
+1. **[H] Insecure-by-default WebSocket origin policy**
+- Evidence: `server.py:472-474`, `server.py:626-630`
+- Risk: CSWSH/unauthorized WS use if env not set
+- Owner: Backend
+- Target: 24-48h
 
-## HIGH
+2. **[H] Mutating API unauthenticated by default**
+- Evidence: `server.py:199-208`, `server.py:899-902`
+- Risk: Unauthorized state mutation when perimeter controls fail
+- Owner: Backend
+- Target: 24-48h
 
-### H1 - `/ws/chat` bypasses configured API auth - FIXED
-- **Location:** `server.py:115`, `server.py:664`
-- **Impact:** Authenticated deployment can still be used via unauthenticated chat WS endpoint.
-- **Fix:** Enforce token/API-key validation on WS upgrade.
-- **Verification:** WS endpoint enforces key validation when `DASH_API_KEY` is configured; production can rely on Cloudflare Access only when unset.
+3. **[H] Test suite currently red (release gate broken)**
+- Evidence: `pytest -q` => 1 failed, 15 passed; failing test at `tests/test_api.py:293`
+- Risk: Undetected regressions
+- Owner: QA/Backend
+- Target: same day
 
-### H2 - Missing WebSocket Origin validation - FIXED
-- **Location:** `server.py:466`
-- **Impact:** Cross-site WebSocket hijacking risk in browser-based deployments.
-- **Fix:** Validate `Origin` against allowlist before `prepare()`.
-- **Verification:** Origin validation now rejects forbidden origins prior to WS upgrade.
+4. **[H] Monolithic architecture (server + UI) driving fragility**
+- Evidence: `server.py` (~919 lines), `static/index.html` (~1344 lines)
+- Risk: High regression likelihood and low change velocity
+- Owner: Platform
+- Target: short-term refactor plan this sprint
 
-### H3 - No WS contract tests for new integration - FIXED
-- **Location:** `tests/test_api.py:1`
-- **Impact:** Regressions in handshake/relay/reconnect path will not be caught pre-deploy.
-- **Fix:** Add WS integration tests with mocked gateway protocol frames.
-- **Verification:** WS handshake, send tracking, auth rejection, and origin rejection tests are present and passing.
+5. **[H] Documentation trust-model contradictions**
+- Evidence: `PROJECT.md:13-15` vs `README.md` + `server.py`
+- Risk: Incorrect security decisions by contributors
+- Owner: Docs + Backend
+- Target: same day
 
-### H4 - Unbounded WS message buffering enables memory DoS - FIXED
-- **Location:** `server.py:479`, `server.py:620`
-- **Impact:** Flooded/disconnected gateway path can accumulate unbounded queued messages.
-- **Fix:** Bound queue size, enforce message size limit, throttle per connection.
-- **Verification:** Outgoing queue is bounded, max message size is enforced, and per-connection inbound rate limiting is enforced.
+## Medium Priority
 
-## MEDIUM
+1. **[M] Non-atomic state persistence can corrupt `agents.json`** (`state.py:64`)
+2. **[M] Missing tests for cleanup/tmux lifecycle paths** (`server.py:39-121`)
+3. **[M] No request body/field size caps on JSON APIs** (`server.py:136-151`)
+4. **[M] Chat history endpoint leaks operator messages by default** (`server.py:856-858`)
+5. **[M] Startup script lacks port/process preflight** (`start.sh:21-37`)
+6. **[M] No standardized lint/type/security command pipeline**
+7. **[M] Missing threat model + deployment runbook docs**
 
-### M1 - Potential plaintext gateway transport (`ws://`) - FIXED
-- **Location:** `server.py:15`, `server.py:358`
-- **Impact:** Token/chat data may traverse unencrypted channels outside localhost.
-- **Fix:** Use `wss://` by default in non-local deployments; enforce TLS mode.
-- **Verification:** Non-local `ws://` gateway URLs are rejected; non-local `http://` inputs normalize to `wss://`.
+## Low Priority
 
-### M2 - `chat.send` responses are not tracked - FIXED
-- **Location:** `server.py:576`
-- **Impact:** Silent message delivery failures and weak reliability semantics.
-- **Fix:** Correlate request IDs with gateway `res` frames and notify client.
-- **Verification:** `send_ok` / `send_error` frames are emitted for tracked `chat.send` request IDs.
+1. **[L] Cleanup loop logging is print-based, not structured**
+2. **[L] Tests use private aiohttp internals (`_server`)** (`tests/test_api.py:278`)
+3. **[L] Legacy REST chat endpoints add maintenance overhead** (`server.py:403-429`, `856-858`)
 
-### M3 - WS chat prerequisites missing from README - FIXED
-- **Location:** `README.md:40`
-- **Impact:** Setup confusion; operators think no env vars are required.
-- **Fix:** Document `OPENCLAW_GATEWAY_URL` + `OPENCLAW_GATEWAY_TOKEN`.
-- **Verification:** README documents both required gateway env vars and clarifies optional local `DASH_API_KEY`.
+## Recommended Sequencing
 
-### M4 - REST and WS chat paths have divergent semantics - FIXED
-- **Location:** `server.py:325`, `server.py:466`, `static/index.html:1217`
-- **Impact:** Confusing behavior when mixed clients use REST and WS chat.
-- **Fix:** Pick one authoritative chat path or fully align and document both.
-- **Verification:** WS is documented as canonical; REST endpoints are explicitly marked legacy compatibility.
-
-### M5 - Missing SSE endpoint tests - FIXED
-- **Location:** `server.py:655`, `tests/test_api.py:1`
-- **Impact:** Event schema regressions can ship undetected.
-- **Fix:** Add stream tests for `agents` and `system` events.
-- **Verification:** New SSE test validates initial `agents` and `system` event frames.
-
-## LOW
-
-### L1 - Generic error reporting limits troubleshooting
-- **Location:** `server.py:548`, `server.py:178`, `static/index.html:1032`
-- **Impact:** Harder incident diagnosis.
-- **Fix:** Structured error codes and minimal server-side sanitized logging.
-
-## Immediate Priority Order
-1. L1 follow-up (optional)
+1. Security defaults + startup validation (H1/H2/H5)
+2. Fix failing WS protocol test and add cleanup tests (H3 + M2)
+3. Persistence hardening + input limits (M1 + M3)
+4. Refactor plan for module decomposition (H4)
+5. Command/tooling standardization + docs runbooks (M5-M7)

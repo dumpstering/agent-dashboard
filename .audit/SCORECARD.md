@@ -1,22 +1,39 @@
-# Scorecard
+# SCORECARD (Weighted Composite)
 
-Scoring scale: 1=Critical, 2=Poor, 3=Adequate, 4=Good, 5=Excellent
+Date: 2026-03-01
+Scale: 0-100 (higher is better)
 
-## Dimension Scores
-- Security: **4/5** (weight 1.5)
-- Architecture: **4/5** (weight 1.2)
-- Testing: **4/5** (weight 1.3)
-- Commands/Endpoints: **4/5** (weight 1.0)
-- Documentation: **4/5** (weight 0.8)
-- Developer Experience: **4/5** (weight 0.7)
+## Weights
+- Security: 30%
+- Architecture: 20%
+- Testing: 20%
+- Commands/Operations: 10%
+- Developer Experience: 10%
+- Documentation: 10%
 
-## Weighted Composite
-- Calculation:
-  - `(4*1.5) + (4*1.2) + (4*1.3) + (4*1.0) + (4*0.8) + (4*0.7)`
-  - `= 6.0 + 4.8 + 5.2 + 4.0 + 3.2 + 2.8`
-  - `= 26.0`
-- Total weight: `1.5 + 1.2 + 1.3 + 1.0 + 0.8 + 0.7 = 6.5`
-- **Weighted composite = 26.0 / 6.5 = 4.00 / 5**
+## Category Scores
+- Security: **70**
+- Architecture: **52**
+- Testing: **82**
+- Commands/Operations: **80**
+- Developer Experience: **78**
+- Documentation: **88**
+
+## Composite
+Weighted score =
+`0.30*70 + 0.20*52 + 0.20*82 + 0.10*80 + 0.10*78 + 0.10*88`
+
+**Composite: 72.4 / 100**
 
 ## Interpretation
-Overall quality is **Good**, with remaining work primarily around optional diagnostics polish (`L1`).
+Security defaults and operational/test posture improved substantially since baseline, but risk remains from optional mutating API auth, unauthenticated chat history exposure, and unresolved monolithic architecture.
+
+## Grade
+**C**
+
+## Must-Pass Exit Criteria for Next Audit
+1. Enforce fail-closed mutating API auth in production mode.
+2. Protect or remove `GET /api/chat/history` in production.
+3. Add field-length caps and tests for JSON body-limit enforcement.
+4. Land and execute a module decomposition plan for server/UI monoliths.
+5. Add a security target (or equivalent) to the standard command pipeline.

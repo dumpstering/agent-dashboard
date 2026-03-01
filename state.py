@@ -1,7 +1,9 @@
 """Agent state management with JSON persistence."""
 import asyncio
 import json
+import os
 import time
+import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -61,7 +63,13 @@ class AgentState:
         """Persist state to disk."""
         data = {agent_id: asdict(agent) for agent_id, agent in self.agents.items()}
         payload = json.dumps(data, indent=2)
-        await asyncio.to_thread(self.db_path.write_text, payload)
+        tmp_path = self.db_path.with_name(f".{self.db_path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            await asyncio.to_thread(tmp_path.write_text, payload)
+            await asyncio.to_thread(os.replace, tmp_path, self.db_path)
+        finally:
+            if tmp_path.exists():
+                await asyncio.to_thread(tmp_path.unlink)
 
     async def add_agent(self, id: str, project: str, task: str, status: str = "queued") -> Agent:
         """Add or update an agent."""

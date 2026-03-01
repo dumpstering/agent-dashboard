@@ -7,6 +7,7 @@ from pathlib import Path
 import aiohttp
 from aiohttp import web
 from aiohttp.test_utils import AioHTTPTestCase
+from aiohttp.test_utils import unused_port
 
 import server
 from state import AgentState
@@ -17,15 +18,15 @@ class BaseApiTestCase(AioHTTPTestCase):
 
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
-        self._original_api_key = os.environ.get("DASH_API_KEY")
+        self._original_api_key = os.environ.get("DASHBOARD_API_KEY")
         self._original_gateway_url = os.environ.get("OPENCLAW_GATEWAY_URL")
         self._original_gateway_token = os.environ.get("OPENCLAW_GATEWAY_TOKEN")
         self._original_allowed_origins = os.environ.get("DASH_ALLOWED_ORIGINS")
 
         if self.DASH_API_KEY is None:
-            os.environ.pop("DASH_API_KEY", None)
+            os.environ.pop("DASHBOARD_API_KEY", None)
         else:
-            os.environ["DASH_API_KEY"] = self.DASH_API_KEY
+            os.environ["DASHBOARD_API_KEY"] = self.DASH_API_KEY
 
         server.state = AgentState(db_path=str(Path(self.tmp_dir.name) / "agents.json"))
         server.sse_clients = set()
@@ -34,9 +35,9 @@ class BaseApiTestCase(AioHTTPTestCase):
 
     def tearDown(self):
         if self._original_api_key is None:
-            os.environ.pop("DASH_API_KEY", None)
+            os.environ.pop("DASHBOARD_API_KEY", None)
         else:
-            os.environ["DASH_API_KEY"] = self._original_api_key
+            os.environ["DASHBOARD_API_KEY"] = self._original_api_key
         if self._original_gateway_url is None:
             os.environ.pop("OPENCLAW_GATEWAY_URL", None)
         else:
@@ -228,6 +229,11 @@ class TestApiAuth(BaseApiTestCase):
 
 class TestChatWebSocket(BaseApiTestCase):
     DASH_API_KEY = "ws-secret"
+    WS_ORIGIN = "https://dash.test"
+
+    def setUp(self):
+        super().setUp()
+        os.environ["DASH_ALLOWED_ORIGINS"] = self.WS_ORIGIN
 
     async def _start_gateway(self, send_ok=True):
         self.gateway_messages = []
@@ -263,7 +269,34 @@ class TestChatWebSocket(BaseApiTestCase):
 
                 if self.gateway_send_ok:
                     await ws.send_json({"type": "res", "id": frame["id"], "ok": True, "payload": {}})
-                    await ws.send_json({"type": "event", "event": "chat", "payload": {"delta": "pong", "done": True}})
+                    await ws.send_json(
+                        {
+                            "type": "event",
+                            "event": "chat",
+                            "payload": {
+                                "runId": frame["id"],
+                                "state": "delta",
+                                "message": {
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": "pong",
+                                        }
+                                    ]
+                                },
+                            },
+                        }
+                    )
+                    await ws.send_json(
+                        {
+                            "type": "event",
+                            "event": "chat",
+                            "payload": {
+                                "runId": frame["id"],
+                                "state": "final",
+                            },
+                        }
+                    )
                 else:
                     await ws.send_json({"type": "res", "id": frame["id"], "ok": False, "error": "denied"})
 
@@ -273,10 +306,9 @@ class TestChatWebSocket(BaseApiTestCase):
         app.router.add_get("/", gateway_ws_handler)
         self.gateway_runner = web.AppRunner(app)
         await self.gateway_runner.setup()
-        self.gateway_site = web.TCPSite(self.gateway_runner, host="127.0.0.1", port=0)
+        gateway_port = unused_port()
+        self.gateway_site = web.TCPSite(self.gateway_runner, host="127.0.0.1", port=gateway_port)
         await self.gateway_site.start()
-        sock = self.gateway_site._server.sockets[0]
-        gateway_port = sock.getsockname()[1]
 
         os.environ["OPENCLAW_GATEWAY_URL"] = f"ws://127.0.0.1:{gateway_port}/"
         os.environ["OPENCLAW_GATEWAY_TOKEN"] = "gateway-test-token"
@@ -293,7 +325,9 @@ class TestChatWebSocket(BaseApiTestCase):
     async def test_ws_connect_send_and_response_tracking(self):
         await self._start_gateway(send_ok=True)
         try:
-            ws = await self.client.ws_connect("/ws/chat?key=ws-secret")
+            ws = await self.client.ws_connect(
+                "/ws/chat?key=ws-secret", headers={"Origin": self.WS_ORIGIN}
+            )
             connected = await self._next_message(ws)
             assert connected["type"] == "connected"
             history = await self._next_message(ws)
@@ -323,7 +357,7 @@ class TestChatWebSocket(BaseApiTestCase):
     async def test_ws_rejects_bad_auth(self):
         os.environ["OPENCLAW_GATEWAY_TOKEN"] = "gateway-test-token"
         with self.assertRaises(aiohttp.WSServerHandshakeError) as ctx:
-            await self.client.ws_connect("/ws/chat?key=wrong")
+            await self.client.ws_connect("/ws/chat?key=wrong", headers={"Origin": self.WS_ORIGIN})
         assert ctx.exception.status == 401
 
     async def test_ws_rejects_forbidden_origin(self):
@@ -339,7 +373,7 @@ class TestChatWebSocket(BaseApiTestCase):
     async def test_ws_rejects_non_local_plaintext_gateway_url(self):
         os.environ["OPENCLAW_GATEWAY_URL"] = "ws://gateway.example.com"
         os.environ["OPENCLAW_GATEWAY_TOKEN"] = "gateway-test-token"
-        ws = await self.client.ws_connect("/ws/chat?key=ws-secret")
+        ws = await self.client.ws_connect("/ws/chat?key=ws-secret", headers={"Origin": self.WS_ORIGIN})
         error = await self._next_message(ws)
         assert error["type"] == "error"
         assert "must use TLS" in error["text"]
@@ -349,7 +383,9 @@ class TestChatWebSocket(BaseApiTestCase):
     async def test_ws_closes_on_message_too_large(self):
         await self._start_gateway(send_ok=True)
         try:
-            ws = await self.client.ws_connect("/ws/chat?key=ws-secret")
+            ws = await self.client.ws_connect(
+                "/ws/chat?key=ws-secret", headers={"Origin": self.WS_ORIGIN}
+            )
             await self._next_message(ws)  # connected
             await self._next_message(ws)  # history
             await ws.send_json({"message": "x" * (server.MAX_CHAT_MESSAGE_BYTES + 1)})

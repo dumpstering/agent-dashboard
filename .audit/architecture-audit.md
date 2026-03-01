@@ -1,31 +1,82 @@
-# Architecture Audit
+# Architecture Audit - Agent Orchestration Dashboard
 
-Score: **3/5 (Adequate)**
+Date: 2026-03-01
 
-Scope focus: WS lifecycle, reconnection behavior, proxy correctness, error handling.
+## Executive Summary
+The system works as a pragmatic single-process tool, but architecture is brittle: global mutable state, high coupling, and mixed responsibilities in one module impede reliability, scale, and safe iteration.
 
-## Findings
+Score: **50/100**
 
-### HIGH - No delivery acknowledgment path for `chat.send`
-- **File:Line:** `server.py:576`
-- **What is wrong:** Outbound messages are forwarded to gateway, but corresponding `res` frames for those request IDs are never tracked or surfaced to browser. Failures are silent.
-- **Suggested fix:** Track pending request IDs, handle success/error `res` frames, and emit explicit browser events (`sent`, `send_error`).
+## High Findings
 
-### MEDIUM - Race-prone access to `history_req_id`
-- **File:Line:** `server.py:527`
-- **What is wrong:** `gateway_ref.get("history_req_id")` is read without lock while reconnect logic mutates it in `finally`, creating potential misassociation during reconnect churn.
-- **Suggested fix:** Read both `ws` and `history_req_id` under `gateway_lock`, or use immutable connection-context objects.
+### H1 - God-module server design
+Evidence:
+- `server.py` is ~919 lines handling API, SSE, WS proxy, tmux lifecycle, and system metrics.
 
-### MEDIUM - Backpressure model incomplete across browser->gateway path
-- **File:Line:** `server.py:479`, `server.py:560`
-- **What is wrong:** There is no bounded backpressure between browser intake and gateway send availability.
-- **Suggested fix:** Bound queue, apply drop/reject policy, and report congestion to client.
+Impact:
+- High change risk, weak isolation, difficult review/testing.
 
-### LOW - Generic reconnect error hides cause granularity
-- **File:Line:** `server.py:548`
-- **What is wrong:** All gateway disconnect/error modes collapse to one browser message, reducing operator debuggability.
-- **Suggested fix:** Classify known failure modes (DNS, auth reject, handshake timeout, protocol mismatch) into distinct user-safe error codes.
+Recommendation:
+- Split into `api_routes.py`, `chat_proxy.py`, `sse.py`, `cleanup.py`, `app_factory.py`.
 
-## Positive Notes
-- WS lifecycle has clear shutdown handling (`stop_event`, task cancel, close guards): `server.py:621`-`server.py:631`.
-- Reconnect backoff is implemented and bounded: `server.py:490`, `server.py:557`-`server.py:558`.
+### H2 - Global mutable runtime state
+Evidence:
+- Globals: `state`, `sse_clients`, `chat_messages`, `cleanup_task` (`server.py:27-31`).
+
+Impact:
+- Prevents multi-worker safety and complicates test determinism.
+
+Recommendation:
+- Store dependencies in `app[...]` context; eliminate module globals.
+
+## Medium Findings
+
+### M1 - Persistence is non-atomic and corruption-prone
+Evidence:
+- `state.py:64` writes directly to `agents.json` without atomic temp+rename.
+- `state.py:56-58` silently resets memory state on load failure.
+
+Impact:
+- Crash during write can corrupt state; silent reset loses operational data.
+
+Recommendation:
+- Atomic writes (`NamedTemporaryFile` + `os.replace`) and backup/rollback on parse failure.
+
+### M2 - Implicit coupling to tmux session naming
+Evidence:
+- Cleanup assumes `agent.id == tmux session name` (`server.py:95`).
+
+Impact:
+- False transitions when naming diverges.
+
+Recommendation:
+- Persist explicit `runtime_ref` for tmux session id.
+
+### M3 - Cleanup logic treats missing tmux as failed agent
+Evidence:
+- `server.py:81-83` returns dead/error when tmux unavailable.
+
+Impact:
+- Operational false negatives on hosts without tmux or during command timeout.
+
+Recommendation:
+- Distinguish "unknown/infra error" from "agent failed".
+
+### M4 - Transport contracts are not versioned
+Evidence:
+- WS/SSE payload parsing is ad-hoc (`server.py` + `static/index.html`).
+
+Impact:
+- Contract drift caused test failure.
+
+Recommendation:
+- Introduce protocol version + typed schemas.
+
+## Strengths
+- Locking around state operations (`state.py:40`, `68`, `83`, `97`, `106`, `111`).
+- Good error normalization for API routes (`server.py:211-227`).
+
+## Architecture Direction
+1. Introduce app-context dependency injection.
+2. Define typed message schema (Pydantic/dataclasses).
+3. Isolate persistence and transport layers.

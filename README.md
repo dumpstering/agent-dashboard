@@ -43,12 +43,13 @@ WebSocket chat requires gateway configuration:
 
 - `OPENCLAW_GATEWAY_URL` (required): OpenClaw gateway WebSocket URL the dashboard proxies to.
 - `OPENCLAW_GATEWAY_TOKEN` (required): bearer token used by dashboard server when authenticating to the gateway.
-- `DASH_API_KEY` (optional, local dev only): enables extra app-level API + WS auth when explicitly set.
-- `DASH_ALLOWED_ORIGINS` (required in production): comma-separated browser origins allowed to open `/ws/chat`.
+- `DASHBOARD_API_KEY` (optional): when set, required for mutating APIs (`POST /api/*`) and `/ws/chat`.
+- `DASH_ALLOWED_ORIGINS` (required unless `DASHBOARD_DEV_MODE=1`): comma-separated browser origins allowed to open `/ws/chat`.
+- `DASHBOARD_DEV_MODE` (optional, dev only): set to `1` to bypass WS Origin allowlist checks locally.
 
-Suggested request header for REST endpoints when optional auth is enabled:
+Required request header for mutating REST endpoints when `DASHBOARD_API_KEY` is enabled:
 
-- `X-API-Key: <DASH_API_KEY>`
+- `X-API-Key: <DASHBOARD_API_KEY>`
 
 ## Chat Architecture (Primary: WebSocket)
 
@@ -60,10 +61,10 @@ Primary chat interface is WebSocket, not REST.
   - Dashboard -> `OPENCLAW_GATEWAY_URL`
 - Gateway token auth is performed server-side by dashboard using `OPENCLAW_GATEWAY_TOKEN`
 
-Browser auth for chat (optional local-dev mode only):
+Browser auth for chat when `DASHBOARD_API_KEY` is enabled:
 
-- Include API key as query param: `/ws/chat?key=<DASH_API_KEY>`
-- In production, the request `Origin` must match `DASH_ALLOWED_ORIGINS`
+- Include API key as query param: `/ws/chat?key=<DASHBOARD_API_KEY>`
+- Unless `DASHBOARD_DEV_MODE=1`, the request `Origin` must match `DASH_ALLOWED_ORIGINS`
 - If origin/key checks fail, WS upgrade is rejected
 
 ## API Contract
@@ -295,8 +296,8 @@ Notes:
 
 - This is the canonical chat interface for the dashboard UI.
 - The server proxies frames between browser and OpenClaw gateway.
-- In production, this is typically protected by Cloudflare Access, with no app-level key required.
-- If `DASH_API_KEY` is set for local development, include query param `?key=<DASH_API_KEY>`.
+- Cloudflare Access is typically used as perimeter auth in production.
+- If `DASHBOARD_API_KEY` is set, include query param `?key=<DASHBOARD_API_KEY>`.
 
 #### `POST /api/chat`
 

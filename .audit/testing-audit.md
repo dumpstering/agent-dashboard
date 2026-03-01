@@ -1,31 +1,64 @@
-# Testing Audit
+# Testing Audit - Agent Orchestration Dashboard
 
-Score: **2/5 (Poor)**
+Date: 2026-03-01
+Command run: `pytest -q`
+Result: **1 failed, 15 passed**
 
-Scope focus: WS endpoint coverage, contract tests for new chat integration, security tests.
+Score: **45/100**
 
-## Findings
+## High Findings
 
-### HIGH - No automated tests for `/ws/chat`
-- **File:Line:** `tests/test_api.py:1`
-- **What is wrong:** Test suite covers REST endpoints only; there are no WebSocket tests for connect, history bootstrap, stream deltas, reply frames, or reconnect behavior.
-- **Suggested fix:** Add async WS tests using `aiohttp` test server + mock gateway to validate handshake, relay mapping, and reconnect flow.
+### H1 - CI-breaking failing test in current suite
+Evidence:
+- Failure in `tests/test_api.py::TestChatWebSocket::test_ws_connect_send_and_response_tracking`.
+- Test gateway emits `{"payload":{"delta":"pong","done":true}}` (`tests/test_api.py:266`) but server expects `state/message.content` (`server.py:590-621`).
 
-### HIGH - No tests for WS auth/origin protections
-- **File:Line:** `tests/test_api.py:159`
-- **What is wrong:** Auth tests validate only POST `/api/*`; no equivalent checks exist for `/ws/chat` under `DASH_API_KEY`.
-- **Suggested fix:** Add tests asserting unauthorized WS upgrade rejection and origin allowlist behavior.
+Impact:
+- Test suite is currently unreliable as a release gate.
 
-### MEDIUM - No negative protocol tests for malformed gateway frames
-- **File:Line:** `server.py:396`, `server.py:432`
-- **What is wrong:** Handshake and runtime frame parsing rely on JSON frames but tests do not cover malformed/nonconforming gateway payloads.
-- **Suggested fix:** Add contract tests for invalid gateway messages and verify graceful client-facing errors.
+Recommendation:
+- Align fixtures to current gateway protocol and add compatibility test matrix.
 
-### MEDIUM - SSE contract not covered despite active endpoint
-- **File:Line:** `server.py:655`
-- **What is wrong:** `/api/sse` behavior (event shapes, initial snapshot) is not validated in current suite.
-- **Suggested fix:** Add event-stream tests for `agents` and `system` event contracts.
+### H2 - No tests for stale-agent cleanup behavior
+Evidence:
+- No coverage for `cleanup_stale_agents`, `check_tmux_session`, `agent_cleanup_loop` (`server.py:39-121`).
 
-## What currently passes
-- `tests/test_api.py` validates REST CRUD, status transitions, normalized errors, and POST auth behavior.
-- Local run: `source venv/bin/activate && PYTHONPATH=. pytest -q tests/test_api.py` -> **10 passed**.
+Impact:
+- Regression risk in core orchestration correctness.
+
+Recommendation:
+- Add unit tests with mocked subprocess outcomes and time-based loop control.
+
+## Medium Findings
+
+### M1 - Security configuration paths under-tested
+Evidence:
+- Partial tests for origin/key rejection exist, but no startup/config invariants for production hardening.
+
+Recommendation:
+- Add tests for fail-closed startup when required env vars are missing in production mode.
+
+### M2 - No browser-level integration tests
+Evidence:
+- Only aiohttp test client coverage; no frontend E2E for SSE+WS interaction.
+
+Recommendation:
+- Add Playwright smoke tests for connect/reconnect/chat render/agent updates.
+
+### M3 - Deterministic test script is outside automated suite
+Evidence:
+- `test_agents.py` is useful but not integrated into CI pipeline.
+
+Recommendation:
+- Convert into pytest integration cases or invoke from CI target.
+
+### M4 - Tests rely on private aiohttp server internals
+Evidence:
+- `tests/test_api.py:278` uses `self.gateway_site._server.sockets[0]`.
+
+Recommendation:
+- Wrap gateway startup in helper returning bound URL via supported API.
+
+## Positive Coverage
+- CRUD/status/error contracts are well exercised.
+- Auth rejection/acceptance basics are covered.

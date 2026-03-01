@@ -1,39 +1,55 @@
-# Commands and Endpoints Audit
+# Commands Audit - Agent Orchestration Dashboard
 
-Score: **3/5 (Adequate)**
+Date: 2026-03-01
 
-Scope focus: correctness of API routes and WS endpoint behavior.
-
-## Route Inventory (observed)
-- `GET /`
-- `GET /api/sse`
-- `GET /api/agents`
-- `GET /api/stats`
-- `GET /api/system`
-- `GET /api/chat/history`
-- `POST /api/agents`
-- `POST /api/agents/status`
-- `POST /api/agents/remove`
-- `POST /api/chat`
-- `GET /ws/chat`
+Score: **48/100**
 
 ## Findings
 
-### HIGH - Endpoint protection inconsistency
-- **File:Line:** `server.py:115`, `server.py:664`
-- **What is wrong:** REST POST endpoints can be protected by API key, but WS chat endpoint remains open under the same deployment, creating inconsistent command surface protection.
-- **Suggested fix:** Apply equivalent auth to `/ws/chat`.
+### H1 - Startup command flow is not deployment-safe
+Evidence:
+- `start.sh` always installs deps (`start.sh:21-23`) and starts server without port/process checks (`start.sh:37`).
+- Runtime probe showed port conflict condition on 8223.
 
-### MEDIUM - WS endpoint is operationally dependent on undocumented env var
-- **File:Line:** `server.py:471`, `README.md:42`
-- **What is wrong:** `/ws/chat` immediately errors/closes without `OPENCLAW_GATEWAY_TOKEN`, but README states server can run with no env vars and does not document WS dependency.
-- **Suggested fix:** Document required vars and startup behavior; optionally hide/disable chat UI when not configured.
+Impact:
+- Repeated installs slow startup and can introduce nondeterminism; port conflicts cause failed boots.
 
-### MEDIUM - Legacy `/api/chat` and WS chat can diverge state semantics
-- **File:Line:** `server.py:325`, `server.py:466`, `static/index.html:1217`
-- **What is wrong:** UI says chat is WS-only, but legacy REST chat remains active and writes local history independently from gateway-backed flow. Mixed clients can observe inconsistent histories.
-- **Suggested fix:** Define one authoritative chat path. If REST is retained, synchronize semantics and document precedence.
+Recommendation:
+- Add preflight: venv check, pinned lock verification, port conflict detection, clear failure messages.
 
-## Verification notes
-- REST contract tests pass (10/10) via `tests/test_api.py`.
-- Runtime WS check confirms missing token behavior: server sends error then closes connection.
+### M1 - No canonical task runner
+Evidence:
+- No `Makefile`, `justfile`, or npm scripts.
+
+Impact:
+- Inconsistent operator workflows and onboarding friction.
+
+Recommendation:
+- Add `make`/`just` commands: `setup`, `run`, `test`, `lint`, `smoke`, `audit`.
+
+### M2 - Missing lint/type/security scan commands
+Evidence:
+- Repo lacks ruff/mypy/bandit/pip-audit command paths.
+
+Impact:
+- Quality/security checks are ad hoc.
+
+Recommendation:
+- Add a `scripts/check.sh` pipeline and CI hook.
+
+### M3 - Requirements pinning lacks hash integrity
+Evidence:
+- `requirements.txt` pins versions but no hashes/lockfile.
+
+Impact:
+- Supply-chain reproducibility risk.
+
+Recommendation:
+- Generate locked hashes (`pip-compile --generate-hashes`) for production.
+
+### L1 - Explicit gateway token requirement in startup script
+Evidence:
+- `start.sh:34` hard-fails if `OPENCLAW_GATEWAY_TOKEN` missing.
+
+Impact:
+- Good guardrail.

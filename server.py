@@ -20,6 +20,7 @@ DASH_API_KEY_KEY = web.AppKey("dash_api_key", str)
 NETWORK_TRACKER_KEY = web.AppKey("network_tracker", NetworkStatsTracker)
 
 MAX_CHAT_MESSAGE_BYTES = 16 * 1024
+MAX_JSON_BODY_BYTES = 1 * 1024 * 1024
 MAX_CHAT_MESSAGES_PER_WINDOW = 30
 CHAT_RATE_WINDOW_SECONDS = 10
 
@@ -135,6 +136,10 @@ def get_api_key(request: web.Request) -> str:
 
 async def parse_json(request: web.Request, required_fields=None):
     """Parse JSON body and verify required fields."""
+    content_length = request.content_length
+    if content_length is not None and content_length > MAX_JSON_BODY_BYTES:
+        return None, error_response("Request body too large", status=413)
+
     try:
         data = await request.json()
     except Exception:
@@ -468,10 +473,13 @@ def is_ws_api_key_valid(request: web.Request) -> bool:
 
 
 def is_origin_allowed(request: web.Request) -> bool:
-    """Validate websocket Origin header when DASH_ALLOWED_ORIGINS is configured."""
-    raw_allowed_origins = os.getenv("DASH_ALLOWED_ORIGINS")
-    if raw_allowed_origins is None:
+    """Validate websocket Origin header with fail-closed defaults."""
+    if os.getenv("DASHBOARD_DEV_MODE") == "1":
         return True
+
+    raw_allowed_origins = os.getenv("DASH_ALLOWED_ORIGINS", "")
+    if not raw_allowed_origins.strip():
+        return False
 
     origin = request.headers.get("Origin", "").strip()
     if not origin:
@@ -483,7 +491,6 @@ def is_origin_allowed(request: web.Request) -> bool:
     allowed_origins = {
         entry.strip().lower() for entry in raw_allowed_origins.split(",") if entry.strip()
     }
-    allowed_origins.update({"localhost", "127.0.0.1"})
 
     if origin_host in allowed_origins or origin_host_port in allowed_origins:
         return True
@@ -884,7 +891,7 @@ async def handle_cleanup(app):
 def create_app():
     """Create aiohttp application."""
     app = web.Application(middlewares=[api_error_middleware, auth_middleware])
-    app[DASH_API_KEY_KEY] = os.getenv("DASH_API_KEY", "")
+    app[DASH_API_KEY_KEY] = os.getenv("DASHBOARD_API_KEY", "")
     app[NETWORK_TRACKER_KEY] = NetworkStatsTracker()
 
     # Root route

@@ -25,6 +25,19 @@ pip install -q -r requirements.txt
 echo ""
 echo -e "${GREEN}✓ Ready${NC}"
 echo ""
+
+if command -v lsof >/dev/null 2>&1; then
+  if lsof -nP -iTCP:8223 -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "Error: port 8223 is already in use. Stop the existing process before starting."
+    exit 1
+  fi
+elif command -v ss >/dev/null 2>&1; then
+  if ss -ltn | grep -q ':8223 '; then
+    echo "Error: port 8223 is already in use. Stop the existing process before starting."
+    exit 1
+  fi
+fi
+
 echo "📡 Starting server on http://localhost:8223"
 echo "Press Ctrl+C to stop"
 echo ""

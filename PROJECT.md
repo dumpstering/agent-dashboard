@@ -10,9 +10,10 @@ Read this file before making any changes to the dashboard.
 - **Design reference:** design-craft-dark-tech/skill.md (MUST follow for all UI work)
 
 ## Authentication
-- **Cloudflare Access is the ONLY auth layer.** The entire site (dash.clwiop.xyz) is behind Cloudflare Zero Trust with email OTP.
-- **Do NOT add application-level authentication** (no API keys, no login forms, no WS auth tokens). If someone reaches the dashboard, they're already authenticated.
-- The optional DASH_API_KEY env var exists for local dev/testing only and should NOT be required in production.
+- Cloudflare Access is the primary perimeter auth layer for production deployments.
+- The server also supports optional application-level auth for mutating operations via `DASHBOARD_API_KEY`.
+- When `DASHBOARD_API_KEY` is set, all mutating REST APIs (`POST /api/*`) and `/ws/chat` require that key.
+- `DASHBOARD_DEV_MODE=1` is a local-development override for WebSocket origin checks only.
 
 ## Chat Integration
 - Dashboard chat connects to Op (OpenClaw agent) via WebSocket proxy
@@ -29,7 +30,9 @@ Read this file before making any changes to the dashboard.
 ## Environment Variables
 - `OPENCLAW_GATEWAY_TOKEN` - Required for chat proxy to OpenClaw gateway
 - `OPENCLAW_GATEWAY_URL` - Gateway URL (default: http://localhost:18789)
-- `DASH_API_KEY` - Optional, local dev only, not needed behind Cloudflare
+- `DASHBOARD_API_KEY` - Optional app-level key; when set, required for mutating APIs and `/ws/chat`
+- `DASH_ALLOWED_ORIGINS` - Comma-separated allowlist for `/ws/chat` Origin validation
+- `DASHBOARD_DEV_MODE` - Set to `1` only for local dev to bypass fail-closed WS Origin checks
 
 ## Deployment
 - Cloudflare tunnel: dash.clwiop.xyz -> localhost:8223
@@ -39,6 +42,6 @@ Read this file before making any changes to the dashboard.
 ## Constraints
 - Single HTML file, no build tools
 - Dark-tech design system is mandatory (read design-craft-dark-tech/skill.md)
-- Do not add redundant auth layers (Cloudflare handles it)
+- Keep auth docs aligned with actual server behavior
 - Keep psutil for system stats
 - Keep aiohttp for server

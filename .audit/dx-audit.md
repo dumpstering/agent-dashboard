@@ -1,26 +1,40 @@
-# Developer Experience Audit
+# Developer Experience (DX) Audit - Agent Orchestration Dashboard
 
-Score: **3/5 (Adequate)**
+Date: 2026-03-01
 
-Scope focus: setup, debugging, errors, maintainability of new chat integration.
+Score: **55/100**
 
-## Findings
+## High Friction Areas
 
-### MEDIUM - Setup docs omit WS chat prerequisites
-- **File:Line:** `README.md:40`
-- **What is wrong:** Env var section documents `DASH_API_KEY` only; does not mention `OPENCLAW_GATEWAY_URL` and `OPENCLAW_GATEWAY_TOKEN` needed for live WS chat.
-- **Suggested fix:** Add explicit WS chat prerequisite section with local/dev/prod examples.
+### H1 - Monolithic frontend and backend hinder iteration
+Evidence:
+- `static/index.html` is ~1344 lines inline CSS/JS/HTML.
+- `server.py` is ~919 lines mixed concerns.
 
-### MEDIUM - Test invocation friction is undocumented
-- **File:Line:** `README.md:359`
-- **What is wrong:** README documents only deterministic script (`test_agents.py`), not unit tests. In this workspace, tests required `source venv/bin/activate` and `PYTHONPATH=.`.
-- **Suggested fix:** Add a `Testing` section with exact commands and expected outcomes.
+Impact:
+- Slow reviews, high merge conflict frequency, difficult onboarding.
 
-### LOW - Runtime chat errors are user-visible but not operator-friendly
-- **File:Line:** `server.py:548`, `static/index.html:1032`
-- **What is wrong:** Browser receives generic errors (`Gateway disconnected, retrying...`) without actionable reason codes for debugging.
-- **Suggested fix:** Standardize error payload schema (`code`, `message`, `retryable`) and log correlation IDs server-side.
+Recommendation:
+- Split logical modules while preserving no-build constraint if desired.
 
-## Positive Notes
-- Frontend reconnect behavior is clear and automatic (`static/index.html:1130`-`static/index.html:1176`).
-- Input rendering uses `textContent`, reducing XSS risk in UI message rendering.
+## Medium Friction Areas
+
+### M1 - Test instability undermines developer confidence
+Evidence:
+- Current suite fails (`1 failed, 15 passed`).
+
+### M2 - Documentation and implementation mismatch
+Evidence:
+- `PROJECT.md` says no app-level auth (`PROJECT.md:13-15`) while app still supports key-based auth (`server.py:199-208`, `462-467`).
+
+### M3 - Limited local environment automation
+Evidence:
+- No scripted local stack validation (gateway mock + dashboard smoke).
+
+### M4 - Tooling gaps
+Evidence:
+- No formatter/linter config in repo.
+
+## Positive DX Notes
+- Clear JSON error envelope improves client debugging.
+- `README.md` has detailed endpoint references.
