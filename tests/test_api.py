@@ -10,6 +10,7 @@ from aiohttp.test_utils import AioHTTPTestCase
 from aiohttp.test_utils import unused_port
 
 import server
+from routes.chat import MAX_CHAT_MESSAGE_BYTES
 from state import AgentState
 
 
@@ -222,7 +223,7 @@ class TestApiErrorContracts(BaseApiTestCase):
 
 
 class TestApiAuth(BaseApiTestCase):
-    DASH_API_KEY = "super-secret"
+    DASH_API_KEY: str | None = "super-secret"
 
     async def test_auth_rejection_returns_401(self):
         no_key_resp = await self.client.post(
@@ -298,7 +299,7 @@ class TestApiFailClosedAuth(BaseApiTestCase):
 
 
 class TestChatWebSocket(BaseApiTestCase):
-    DASH_API_KEY = "ws-secret"
+    DASH_API_KEY: str | None = "ws-secret"
     WS_ORIGIN = "https://dash.test"
 
     def setUp(self):
@@ -459,7 +460,7 @@ class TestChatWebSocket(BaseApiTestCase):
             )
             await self._next_message(ws)  # connected
             await self._next_message(ws)  # history
-            await ws.send_json({"message": "x" * (server.MAX_CHAT_MESSAGE_BYTES + 1)})
+            await ws.send_json({"message": "x" * (MAX_CHAT_MESSAGE_BYTES + 1)})
             error = await self._next_message(ws)
             assert error == {"type": "error", "text": "Message too large"}
             closed = await ws.receive(timeout=2)
